@@ -1,0 +1,41 @@
+name: Save record
+on:
+  workflow_dispatch:
+    inputs:
+      record:
+        description: Validated record JSON
+        required: true
+        type: string
+permissions:
+  contents: write
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate, merge and push with conflict retries
+        env:
+          RECORD: ${{ inputs.record }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'record-catalog-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git reset --hard origin/main
+            node scripts/save-record.mjs
+            git add data/records.json
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m 'Add record to collection'
+            if git push origin HEAD:main; then exit 0; fi
+            sleep $((attempt * 2))
+          done
+          echo 'Save failed after retries. Resubmit the record.' >&2
+          exit 1

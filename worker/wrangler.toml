@@ -1,0 +1,8 @@
+name = "side-a-save"
+main = "index.js"
+compatibility_date = "2026-09-01"
+[vars]
+ALLOWED_ORIGIN = "https://therightjon.github.io"
+GITHUB_REPOSITORY = "therightjon/record-catalog"
+GITHUB_REF = "main"
+# Set OWNER_KEY and GITHUB_TOKEN using wrangler secret put, never here.
