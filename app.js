@@ -1,9 +1,11 @@
 import config from "./config.js";
 import { searchQuery, fromRelease, validateRecord } from "./lib/record.js";
+import { readSession, submitRecord, SessionError } from "./lib/session.js";
 const $ = (id) => document.getElementById(id);
 let records = [],
   pending = [],
-  ownerKey = "",
+  sessionReady = false,
+  sessionTimer,
   controls,
   scanVersion = 0,
   lastSearch = 0,
@@ -158,34 +160,81 @@ function showDetail(r) {
   box.append(dl, link);
   $("detail-dialog").showModal();
 }
+function signIn() {
+  if (config.admin) {
+    location.assign("/");
+    return;
+  }
+  try {
+    const url = new URL(config.adminUrl);
+    if (url.protocol !== "https:" || url.username || url.password)
+      throw Error();
+    location.assign(url.href);
+  } catch {
+    $("settings-status").textContent =
+      "Sign-in is not available yet. The owner needs to finish setting it up.";
+    if (!$("settings-dialog").open) $("settings-dialog").showModal();
+  }
+}
+function expireSession(
+  message = "Your session has expired. Sign in again to send drafts.",
+) {
+  sessionReady = false;
+  $("account-status").textContent = message;
+  $("sign-in-again").hidden = false;
+}
+async function checkSession() {
+  try {
+    const session = await readSession();
+    sessionReady = true;
+    $("account-status").textContent = `Signed in as ${session.email}`;
+    $("sign-in-again").hidden = true;
+    clearTimeout(sessionTimer);
+    sessionTimer = setTimeout(
+      expireSession,
+      Math.min(2147483647, Math.max(0, session.expiresAt * 1000 - Date.now())),
+    );
+  } catch {
+    expireSession(
+      "Sign in again to send records. Existing drafts are safe on this device.",
+    );
+  }
+}
 function openAdd() {
+  if (!config.admin) {
+    signIn();
+    return;
+  }
   $("add-dialog").showModal();
 }
 $("add-button").onclick = $("empty-add").onclick = openAdd;
+$("sign-in").onclick = $("sign-in-again").onclick = signIn;
 $("settings-button").onclick = () => {
-  $("settings-status").textContent = config.saveEndpoint
-    ? ownerKey
-      ? "Saving unlocked."
-      : "Saving locked."
-    : "Save endpoint is not configured. Local drafts are available.";
+  $("settings-status").textContent = config.admin
+    ? sessionReady
+      ? "You are signed in. New records will be sent to your shelf."
+      : "Sign in again to send your saved drafts."
+    : config.adminUrl
+      ? "Sign in with your approved email address to add records."
+      : "Sign-in is not available yet. The owner needs to finish setting it up.";
+  $("sign-in").hidden = config.admin && sessionReady;
   $("settings-dialog").showModal();
 };
 for (const d of document.querySelectorAll("dialog")) {
   d.querySelector(".close").onclick = () => d.close();
   d.addEventListener("close", stopCamera);
 }
-$("unlock").onsubmit = (e) => {
-  e.preventDefault();
-  ownerKey = $("owner-key").value.trim();
-  $("owner-key").value = "";
-  $("settings-status").textContent =
-    "Key held for this session. It will be checked when you send a record.";
-};
-$("lock").onclick = () => {
-  ownerKey = "";
-  $("owner-key").value = "";
-  $("settings-status").textContent = "Saving locked.";
-};
+if (config.admin) {
+  $("account-row").hidden = false;
+  $("account-status").textContent = "Checking your sign-in…";
+  $("public-catalog").href = config.publicCatalogUrl;
+  $("import-label").hidden = false;
+  $("offline-note").textContent = "Use your public shelf for offline browsing.";
+  checkSession();
+} else {
+  $("add-button").textContent = "Sign in to add records";
+  $("empty-add").textContent = "Sign in to add your first record ↗";
+}
 $("filter").oninput = $("sort").onchange = render;
 $("refresh").onclick = refresh;
 $("mode").onchange = () => {
@@ -276,11 +325,10 @@ async function lookup(append) {
         renderPending();
         b.textContent = "Added";
         b.disabled = true;
-        if (ownerKey && config.saveEndpoint && navigator.onLine)
-          sendRecord(item);
+        if (config.admin && sessionReady && navigator.onLine) sendRecord(item);
         else
           $("lookup-status").textContent =
-            "Saved as a local draft. Open Settings to unlock sending.";
+            "Saved as a local draft. Sign in again or reconnect to send it.";
       };
       row.append(cover(r), info, b);
       $("results").append(row);
@@ -304,42 +352,33 @@ async function lookup(append) {
 }
 async function sendRecord(item) {
   if (item.state === "sending") return;
-  if (!config.saveEndpoint || !ownerKey) {
-    $("status").textContent = "Open Settings to configure or unlock saving.";
+  if (!config.admin) {
+    $("settings-status").textContent =
+      "Export your drafts here, then import the backup on the signed-in page.";
+    if (!$("settings-dialog").open) $("settings-dialog").showModal();
+    return;
+  }
+  if (!sessionReady) {
+    expireSession();
+    $("status").textContent = "Sign in again to send your drafts.";
     return;
   }
   const previous = item.state;
   item.state = "sending";
   renderPending();
   try {
-    const url = new URL(config.saveEndpoint);
-    if (
-      url.protocol !== "https:" &&
-      !["localhost", "127.0.0.1"].includes(url.hostname)
-    )
-      throw Error("Save endpoint must use HTTPS.");
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${ownerKey}`,
-      },
-      body: JSON.stringify(item.record),
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!res.ok)
-      throw Error(
-        res.status === 401
-          ? "Owner key was rejected. Update it in Settings."
-          : "Save could not be queued. Your draft is still here.",
-      );
+    await submitRecord(item.record);
     item.state = "queued";
     $("status").textContent =
       "Queued for publication. Refresh in a minute to confirm.";
   } catch (err) {
     item.state = previous;
+    if (err instanceof SessionError) expireSession(err.message);
     $("status").textContent =
-      err.message || "Unable to send. Retry when online.";
+      err instanceof TypeError
+        ? "Could not reach saving. Your draft is safe. Reconnect, or sign in again if your session expired."
+        : err.message || "Unable to send. Retry when online.";
+    if (err instanceof TypeError) $("sign-in-again").hidden = false;
   }
   persist();
   renderPending();
@@ -436,11 +475,45 @@ $("export").onclick = () => {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
-window.addEventListener("online", refresh);
+$("import-drafts").onchange = async (event) => {
+  const file = event.target.files[0];
+  if (!file || !config.admin) return;
+  try {
+    if (file.size > 2 * 1024 * 1024)
+      throw Error("Choose a backup smaller than 2 MB.");
+    const data = JSON.parse(await file.text());
+    if (!Array.isArray(data.drafts) || data.drafts.length > 1000)
+      throw Error("Choose a Side A backup with at most 1,000 drafts.");
+    const imported = data.drafts.map(validateRecord);
+    let count = 0;
+    for (const record of imported) {
+      if (
+        !records.some((r) => r.id === record.id) &&
+        !pending.some((p) => p.record.id === record.id)
+      ) {
+        pending.push({ record, state: "draft" });
+        count++;
+      }
+    }
+    const stored = persist();
+    renderPending();
+    $("settings-status").textContent = stored
+      ? `Imported ${count} drafts. Use Send drafts to submit them.`
+      : "Drafts are available in this window, but device storage failed. Keep your backup.";
+  } catch (err) {
+    $("settings-status").textContent = `Import failed: ${err.message}`;
+  }
+  event.target.value = "";
+};
+window.addEventListener("online", () => {
+  refresh();
+  if (config.admin) checkSession();
+});
+
 window.addEventListener("offline", () => {
   $("status").textContent =
     "Offline · browsing your saved shelf. Sending and lookup need a connection.";
 });
-if ("serviceWorker" in navigator)
+if (!config.admin && "serviceWorker" in navigator)
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 refresh();

@@ -1,25 +1,25 @@
 # Side A — your vinyl record catalog
 
-A mobile-first, single-page record shelf built with HTML, CSS and vanilla JavaScript. GitHub Pages serves the catalog; one Cloudflare Worker authenticates writes and triggers GitHub Actions. There is no database and no frontend framework.
+A mobile-first record shelf using HTML, CSS and vanilla JavaScript, with `data/records.json` as the catalog. [Public catalog](https://therightjon.github.io/record-catalog/) · [Repository](https://github.com/therightjon/record-catalog).
 
-Repository: [therightjon/record-catalog](https://github.com/therightjon/record-catalog). GitHub Pages is configured at [therightjon.github.io/record-catalog](https://therightjon.github.io/record-catalog/). Saving still requires the Cloudflare setup below.
+Anyone can browse the public GitHub Pages site. **Adding records happens on a separate Cloudflare Worker page protected by Cloudflare Access email sign-in.** That page and its save endpoint share one origin, so authentication works without cross-site cookies or CORS exceptions.
 
-## What works
+The code is ready for Access, but Cloudflare account setup is still required. Until you configure the Worker address, the public sign-in button explains that setup is pending. The Worker denies all access until its authentication configuration is complete.
 
-- Search MusicBrainz by catalog number, typed barcode, or artist/title. Choose the matching vinyl pressing from paginated results.
-- Scan barcodes with the rear phone camera using locally bundled ZXing. Type digits if camera access is unavailable.
-- Fetch artwork from Cover Art Archive, with a local fallback for missing covers.
-- Browse, filter, sort and inspect the collection in `data/records.json`.
-- Install a home-screen app; browse the cached catalog offline. Lookup and submission require a connection. Remote artwork is not cached for offline use.
-- Keep drafts on the current device, export a backup, and send them after unlocking saving.
-- Track queued records until a refreshed published catalog confirms them.
-- Validate at both the endpoint and Action, deduplicate by MusicBrainz release ID, retry concurrent Git pushes, and publish automatically after successful saves.
+## Features
 
-The catalog starts empty intentionally. Different pressings remain separate; multiple copies of the same pressing are treated as one record. Cover-photo OCR, collection editing/deleting, and arbitrary manual record entry are not included. Artist/title search is supported.
+- MusicBrainz lookup by catalog number, barcode digits, or artist/title; choose the matching vinyl pressing from paginated results.
+- Rear-camera barcode scanning with a locally bundled ZXing library and typed-digit fallback.
+- Cover Art Archive artwork with a local placeholder for missing covers.
+- Collection filtering, sorting, release details and offline browsing on the public site.
+- Signed-in owner page with visible account identity, session expiration, sign-out, local drafts, backup export and draft import.
+- Authenticated GitHub Action validates, deduplicates by release ID, commits and pushes the catalog. A second workflow publishes Pages.
 
-## Local preview
+Different pressings remain separate; repeat submissions of the same release ID are safe. Cover-photo OCR, arbitrary manual entry, editing/deleting records and multi-copy counts are not included.
 
-Requires Node.js 20+ (22 recommended), npm and Python 3 for the preview server.
+## Local preview and checks
+
+Use Node.js 22+ and npm. Python 3 is only needed for the static preview.
 
 ```sh
 npm ci
@@ -28,144 +28,153 @@ npm run build
 python3 -m http.server 8080 --directory dist
 ```
 
-Open http://localhost:8080. Rebuild after edits. Serve `dist`, not the repository root: the build copies the pinned scanner bundle into the public assets. No secrets or Worker source enter the deployment. A localhost camera test uses your computer camera; test the deployed HTTPS site on an actual phone before relying on scanning.
+Open http://localhost:8080. This previews the public shelf. The authenticated owner page requires Cloudflare Access. There is deliberately no local authentication bypass in production code. Tests use locally generated RSA keys and signed fixture sessions.
 
-## 1. Publish to GitHub Pages
+The build copies only frontend files, metadata and bundled scanner assets to `dist`. Worker source, JWT code, tests and secrets are excluded. `jose` is bundled into the Worker separately by Wrangler.
 
-1. Create a GitHub repository named `record-catalog` with default branch `main`. Copy **all this folder's contents, including `.github`**, into it, commit and push. Do not commit `node_modules`, `dist`, or secrets.
-2. In repository **Settings → Pages → Build and deployment**, select **GitHub Actions** as the source.
-3. Allow GitHub Actions to run. The save workflow explicitly requests `contents: write`; an organization policy or branch rule must also permit that bot to commit to `main`. If your branch requires pull requests, this direct-write design needs an approved bot bypass or a dedicated catalog repository.
-4. Run **Publish catalog** under Actions if the initial push happened before enabling Pages.
-5. Visit `https://YOUR-NAME.github.io/record-catalog/`. Relative assets and manifest scope support project subpaths and custom domains.
+## Set up Cloudflare Access
 
-Both workflows use `main`. If your branch has another name, replace `main` throughout both workflow files and in the Worker's `GITHUB_REF`. The workflow files must exist on the default branch.
+### 1. Create the Worker
 
-## 2. Configure the authenticated save endpoint
+Sign into [Cloudflare](https://dash.cloudflare.com/). From the repository root:
 
-The default is a personal owner key: a random 256-bit bearer credential, entered into Settings each browser session. The GitHub token never goes to the browser. CORS restricts browser origins; the owner key is the actual authorization mechanism.
-
-1. In GitHub **Settings → Developer settings → Personal access tokens → Fine-grained tokens**, create an expiring token restricted to this repository with repository **Actions: Read and write** (plus automatic Metadata read). The Worker only needs to dispatch `save-record.yml`; it does not need Contents write. The Action gets its own short-lived `GITHUB_TOKEN` with Contents write.
-2. Sign into Cloudflare and install/use its official Wrangler CLI:
-
-   ```sh
-   npx wrangler login
-   ```
-
-3. Edit `worker/wrangler.toml`:
-
-   ```toml
-   [vars]
-   ALLOWED_ORIGIN = "https://YOUR-NAME.github.io"
-   GITHUB_REPOSITORY = "YOUR-NAME/record-catalog"
-   GITHUB_REF = "main"
-   ```
-
-   `ALLOWED_ORIGIN` is the exact scheme + hostname (+ port if needed), **without** the `/record-catalog` path or trailing slash. Use your custom domain's origin if applicable.
-
-4. Generate an owner key in your own terminal, then keep it in your password manager:
-
-   ```sh
-   openssl rand -hex 32
-   ```
-
-5. Store both secrets through Wrangler's interactive prompts:
-
-   ```sh
-   cd worker
-   npx wrangler secret put OWNER_KEY
-   npx wrangler secret put GITHUB_TOKEN
-   npx wrangler deploy
-   cd ..
-   ```
-
-   Paste the random owner key into the first prompt and the fine-grained GitHub token into the second. Never paste them into `config.js`, the TOML file, Actions inputs, a commit or a URL. Rotate the owner key with the same command if needed. Rotate the GitHub token before it expires.
-
-6. Edit public `config.js`:
-
-   ```js
-   export default {
-     title: 'Side A',
-     saveEndpoint: 'https://side-a-save.YOUR-SUBDOMAIN.workers.dev/records',
-     musicBrainzContact: 'https://github.com/YOUR-NAME/record-catalog',
-   };
-   ```
-
-7. Commit and push the configuration change. After publication, open **Settings** in the catalog, enter the **owner key** (not the GitHub token), and unlock saving.
-8. Find a record and add it. It first appears under “Waiting to join the shelf.” Check GitHub Actions for **Save record** followed by **Publish catalog**. Refresh the catalog after publication: the queued card is replaced by a catalog card.
-
-The Cloudflare Worker has not been deployed; complete the steps above to enable remote saving. Service availability, quotas and account billing are controlled by those providers.
-
-## How a save works
-
-```text
-Phone → POST /records + owner key → Cloudflare Worker
-      → GitHub workflow_dispatch → Save record Action
-      → validate + deduplicate → commit + push data/records.json
-      → Publish catalog workflow → GitHub Pages
-      → Refresh → confirmed record
+```sh
+npm ci
+cd worker
+npx wrangler login
+npx wrangler deploy
 ```
 
-`202 Accepted` means queued, not committed. A failed Action remains visible as queued on the device: inspect Actions, resolve the error and use Retry. Repeated submissions are safe because the MusicBrainz release ID is the deduplication key. A timeout can occur after dispatch; retry remains safe. Dismissing a queued item only removes the local indicator, **not** the submitted job or published record.
+Complete the browser login. The deploy command automatically builds the static assets. If asked, choose a workers.dev subdomain. Copy the resulting URL, such as `https://side-a-save.YOUR-SUBDOMAIN.workers.dev`.
 
-The Pages workflow uses `workflow_run` after a successful Save record workflow. This is deliberate: a push made with GitHub's `GITHUB_TOKEN` normally does **not** trigger another push workflow. The deploy job checks out the latest `main`. Pages deploys may coalesce when many saves arrive; the latest deployment includes the latest committed catalog.
+At this stage, opening the URL returns a setup error. This is intentional: unconfigured authentication denies access.
 
-Concurrent saves each fetch the latest branch, reapply their validated record and retry a rejected push up to five times. There is no save-level concurrency group that could silently cancel queued submissions.
+### 2. Protect the whole Worker hostname with Access
 
-## Data and safety
+Open **Cloudflare Zero Trust** and complete its initial account/team setup if needed. Then:
 
-The Action and Worker share `lib/record.js`. Unknown fields, malformed IDs, oversized strings, control characters, invalid years/barcodes and non-vinyl formats are rejected. The endpoint bounds the body to 4 KB, requires an exact allowed origin, checks a hashed owner credential, and dispatches only to the configured repository, workflow and branch. Upstream errors do not expose the GitHub token or private response bodies. Records render as text; artwork URLs derive from validated IDs.
+1. Under **Access → Applications**, add a **Self-hosted** application named **Side A owner**.
+2. Set the application domain to the complete Worker hostname, such as `side-a-save.YOUR-SUBDOMAIN.workers.dev`. Leave the path empty so the page, assets, `/session` and `/records` are all protected.
+3. Choose a session duration, for example **24 hours**.
+4. Add an **Allow** policy whose **Include → Emails** rule contains only the exact email address you will use. Do not select Everyone or allow an entire email provider's domain.
+5. Enable **One-time PIN** as a login method. Cloudflare sends approved users a code by email. If it is not available in the application, add it under the account's login/identity-provider settings first.
+6. Save the application. Copy its **Application Audience (AUD)** value and your team domain, such as `https://YOUR-TEAM.cloudflareaccess.com`.
 
-Example shape (illustrative ID, not an actual MusicBrainz release):
+Use a hostname-based self-hosted application as described above. The Worker independently validates Access JWTs and rejects requests through any hostname other than its configured `ADMIN_ORIGIN`. Preview URLs are disabled.
 
-```json
-{
-  "id": "12345678-1234-1234-1234-123456789abc",
-  "title": "Album title",
-  "artist": "Artist name",
-  "year": "1984",
-  "country": "US",
-  "catalogNumber": "ABC 123",
-  "label": "Label name",
-  "barcode": "0123456789012",
-  "format": "12\" Vinyl"
-}
+### 3. Fill in the Worker configuration
+
+Edit `worker/wrangler.toml` with the four account-specific values:
+
+```toml
+ADMIN_ORIGIN = "https://side-a-save.YOUR-SUBDOMAIN.workers.dev"
+ACCESS_TEAM_DOMAIN = "https://YOUR-TEAM.cloudflareaccess.com"
+ACCESS_AUD = "YOUR-APPLICATION-AUDIENCE"
+ALLOWED_EMAILS = "your-approved-email@example.com"
 ```
 
-Validation checks shape, not the historical correctness of metadata. Only unlock with a trusted owner. Anyone with the owner key can submit catalog records; there is no multi-user login, revocation per device, or account recovery. Do not use a memorable password as the key. Deploy behind additional rate limits/Cloudflare Access if your needs extend beyond a personal collection. No automatic retry loop sends drafts without an explicit send action.
+Both origin/domain values have **no trailing slash**. `ALLOWED_EMAILS` must match the email in the Access policy; use comma-separated exact addresses to allow more owners. These values are configuration, not bearer credentials. Only commit email addresses you are comfortable including in the public repository.
 
-Your published catalog is public on GitHub Pages. Drafts use localStorage, are scoped to the site's path, and disappear if browser site data is cleared. The key stays only in JavaScript memory. Export produces `{ records, drafts }`; there is no automatic import UI. Recover drafts by submitting their individual validated objects using the Save record workflow, or carefully merging records by ID in `data/records.json` and committing. Export does not contain credentials.
+These repository settings are already filled in:
 
-## PWA behavior and maintenance
+```toml
+GITHUB_REPOSITORY = "therightjon/record-catalog"
+GITHUB_REF = "main"
+PUBLIC_CATALOG_URL = "https://therightjon.github.io/record-catalog/"
+```
 
-On iPhone, use Safari → Share → Add to Home Screen. On Android, use the browser's Install/Add to Home Screen option. HTTPS is required outside localhost. Offline browsing becomes available after the service worker finishes installing; an initial visit needs a connection. Missing offline artwork uses the local placeholder.
+The public catalog URL needs its trailing slash. Never set `assets.run_worker_first` to false: the Worker must verify identity before serving static assets.
 
-The service worker uses network-first requests for a small allowlist of same-origin files, with cached fallback. It never caches POSTs, credentials or endpoint responses. On app-shell changes, bump the cache version in `sw.js`; close and reopen existing app windows to let an updated worker activate. Browser/OS storage eviction can remove offline data. Refresh reconciles pending entries with the published JSON; it does not poll private Action status.
+### 4. Add the GitHub secret and deploy
 
-To rename the installed app, also edit `manifest.webmanifest`. Icons are in `assets/`. Update dependency lockfiles when upgrading ZXing and retest scanning on your phone.
+Create an expiring [fine-grained GitHub token](https://github.com/settings/personal-access-tokens/new) with:
+
+- Resource owner: `therightjon`.
+- Repository access: only `record-catalog`.
+- Repository permission: **Actions: Read and write** (plus automatic Metadata read).
+
+In the `worker` directory, run:
+
+```sh
+npx wrangler secret put GITHUB_TOKEN
+npx wrangler deploy
+```
+
+Paste the token at the prompt. The Worker uses this token only to dispatch the save workflow. The GitHub Action uses its own short-lived `GITHUB_TOKEN` with Contents write to commit records. Store the fine-grained token in your password manager and replace it before expiration.
+
+**The old `OWNER_KEY` is no longer used or accepted.** If you previously stored one, remove it after deploying this version:
+
+```sh
+npx wrangler secret delete OWNER_KEY
+```
+
+Skip that command if you never created the secret. The old `ALLOWED_ORIGIN` setting and frontend `saveEndpoint` setting have also been replaced.
+
+### 5. Connect the public sign-in button
+
+Edit the repository's `config.js` and set the **Worker home page**, including its trailing slash:
+
+```js
+adminUrl: "https://side-a-save.YOUR-SUBDOMAIN.workers.dev/",
+```
+
+Commit and push this change. Do not add `/records` to this URL. After **Publish catalog** completes, the public **Sign in to add records** button navigates to the Worker. Cloudflare presents the email-code login before serving the page.
+
+### 6. Verify the complete flow
+
+1. Open the public catalog in a private browser window. Browsing should need no login.
+2. Select **Sign in to add records**. Sign in with your allowed email; confirm the owner page shows that email.
+3. Find and add a record. It should say queued until **Save record** and **Publish catalog** finish in [GitHub Actions](https://github.com/therightjon/record-catalog/actions).
+4. Refresh the owner page or public shelf. The record should be confirmed in the catalog. The owner page reads the latest public JSON, so it does not need redeploying after each save.
+5. Sign out, and verify the owner page requires sign-in again. An unapproved email must not be allowed to save.
+6. Test scanning on your actual phone over HTTPS.
+
+Email delivery, Access policy configuration and an authenticated live dispatch must be checked in your Cloudflare account; automated local tests do not provision an account or send real login emails.
+
+## Drafts, sessions and offline browsing
+
+A selected record is saved locally before submission. If a session expires or the network fails, the draft stays on the device. Use **Sign in again**, then **Send drafts**. A login redirect or an HTML login page can never count as a successful submission; only a JSON `202` response is accepted.
+
+Drafts are scoped to the page's origin/path. To move drafts from the old public page to the new owner page: open **Settings → Export collection + drafts**, sign in, then choose **Settings → Import drafts from a backup**. Import validates and deduplicates drafts and does not send them automatically. Backups contain `{ records, drafts }`; only the `drafts` array is imported. Imported drafts are limited to 1,000 records and files under 2 MB.
+
+Signing out does not delete drafts. Clearing browser site data can delete them; export a backup before doing so. Dismissing a queued card removes only the local indicator, not its GitHub job or published record.
+
+The public catalog has a network-first service worker for offline browsing after the first successful visit. Artwork is fetched remotely and can fall back to the placeholder offline. The owner page does not register a service worker, and its responses use `private, no-store`; sign-in and saving require a connection. Install the public site through your phone browser's Add to Home Screen option.
+
+## Security and workflow design
+
+The Worker verifies the `Cf-Access-Jwt-Assertion` signature with Cloudflare's team signing keys using `jose`. It checks RS256, issuer, application audience, expiry/not-before, required claims, application token type, and the configured email allowlist. A plain email header or legacy owner key cannot authorize a request. Missing configuration fails closed.
+
+All Worker routes, including its assets and `/session`, require authentication. JSON writes also require a matching same-origin `Origin` header and JSON content type, preventing cross-site form submissions. No cross-origin write permissions are granted. The GitHub secret and Access session token are never included in frontend configuration, backups, or GitHub workflow inputs. Worker responses disable caching and framing.
+
+The Worker and Action share strict record validation in `lib/record.js`. Requests are limited to 4 KB. Unknown fields, invalid IDs/years/barcodes, control characters and non-vinyl formats are rejected. This checks shape, not metadata's historical accuracy. Catalog content renders as text; artwork URLs derive from validated release IDs.
+
+The save workflow fetches the latest `main`, reapplies a validated record and retries rejected Git pushes up to five times. It has no concurrency group that could cancel queued saves. Deduplication uses normalized MusicBrainz release IDs.
+
+The Pages workflow runs after a successful save through `workflow_run`, because pushes made with GitHub's `GITHUB_TOKEN` normally do not trigger another push workflow. It checks out the latest `main`. Both workflows assume `main` is the default branch and the bot can write to it. Branch rules or organization policies requiring pull requests need an approved bot exception or a separate catalog repository.
 
 ## Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
-| Search empty | Try fewer artist/title words, catalog number or barcode; not every pressing is in MusicBrainz. |
-| Lookup busy / unavailable | Wait and retry. Calls are spaced by at least 1.1 seconds within a page; multiple devices share upstream limits. |
-| Camera unavailable | Use HTTPS, allow camera access, open in Safari/Chrome, or type barcode digits. Scanning stops on close, cancel or backgrounding. |
-| Scanner cannot load locally | Run `npm ci` and `npm run build`, then serve `dist`. |
-| Save returns 401 | Re-enter the owner key; it is not your GitHub token. |
-| Save is blocked by CORS | Compare the browser origin exactly to `ALLOWED_ORIGIN`. |
-| Save returns 502 | Check token expiry, Actions write permission, repository, branch and workflow filename. |
-| Queued indefinitely | Inspect Save record and Publish catalog logs; branch protections, workflow permissions or Pages settings may be blocking it. Retry after fixing. |
-| Stale app | Close all installed/browser windows, reopen online and refresh. |
+| Public sign-in says setup pending | Set `adminUrl`, commit it and wait for Pages publication. |
+| Worker setup error / 503 | Fill all four Access settings and redeploy. Add the GitHub secret for saves. |
+| No login screen; 401 instead | Configure an Access application covering the entire Worker hostname. |
+| Sign-in succeeds, Worker denies access | Check exact team URL, AUD, allowed email, and canonical Worker origin. |
+| Owner page is blank or asset requests fail | Build and deploy with the `[assets]` binding intact; ensure the whole hostname uses the same Access application. |
+| Save rejected / draft remains | Sign in again, check connectivity, then retry. If the Worker reports GitHub failure, check token expiry and Actions write permission. |
+| Queued indefinitely | Inspect both workflows; fix branch/Pages permissions and retry. |
+| Search unavailable | MusicBrainz is rate limited. Wait, retry, or use fewer search terms. |
+| Camera unavailable | Use HTTPS, allow camera access, or type the barcode digits. |
 
-## Verification
-
-`npm test` covers invalid input, release mapping, search escaping, duplicate retries versus distinct pressings, authentication, CORS, payload bounds, dispatch routing and upstream failure handling. `npm run build` produces only the static deployment files. A real phone camera and live authenticated GitHub/Cloudflare deployment require final testing in your accounts.
+Run `npm test` for signed-session, authorization, CSRF, input validation, dispatch, response-handling and catalog tests. Run `npm run build` to build assets. To validate the Worker bundle without deploying, run `npx wrangler deploy --dry-run` from `worker/`.
 
 ## Primary references
 
-- [MusicBrainz release search fields](https://musicbrainz.org/doc/MusicBrainz_API/Search)
-- [MusicBrainz API and request limits](https://musicbrainz.org/doc/MusicBrainz_API)
-- [Cover Art Archive API](https://musicbrainz.org/doc/Cover_Art_Archive/API)
-- [ZXing browser camera API](https://github.com/zxing-js/browser)
-- [GitHub workflow triggering and token behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
-- [Cloudflare Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
+- [Cloudflare Access for Worker hostnames](https://developers.cloudflare.com/workers/configuration/cloudflare-access/)
+- [Cloudflare one-time PIN login](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/)
+- [Validating Access JWTs](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
+- [Worker-first static assets](https://developers.cloudflare.com/workers/static-assets/routing/worker-script/)
+- [Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
+- [GitHub workflow triggering](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow)
+- [MusicBrainz search](https://musicbrainz.org/doc/MusicBrainz_API/Search), [API limits](https://musicbrainz.org/doc/MusicBrainz_API), [Cover Art Archive](https://musicbrainz.org/doc/Cover_Art_Archive/API), [ZXing](https://github.com/zxing-js/browser)

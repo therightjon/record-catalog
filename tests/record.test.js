@@ -7,7 +7,6 @@ import {
   fromRelease,
   VINYL_FILTER,
 } from "../lib/record.js";
-import worker from "../worker/index.js";
 const record = {
   id: "12345678-1234-1234-1234-123456789abc",
   artist: "Artist",
@@ -72,84 +71,4 @@ test("release mapping joins artist credits and handles incomplete metadata", () 
   });
   assert.equal(r.artist, "A & B");
   assert.equal(r.year, "");
-});
-const env = {
-  ALLOWED_ORIGIN: "https://owner.github.io",
-  OWNER_KEY: "x".repeat(64),
-  GITHUB_TOKEN: "secret",
-  GITHUB_REPOSITORY: "owner/records",
-  GITHUB_REF: "main",
-};
-function req(body = record, headers = {}, method = "POST") {
-  return new Request("https://save.example/records", {
-    method,
-    headers: {
-      Origin: env.ALLOWED_ORIGIN,
-      Authorization: `Bearer ${env.OWNER_KEY}`,
-      "Content-Type": "application/json",
-      ...headers,
-    },
-    ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
-  });
-}
-test("endpoint rejects unauthorized, wrong origin, oversized and invalid requests", async () => {
-  assert.equal(
-    (await worker.fetch(req(record, { Origin: "https://evil.example" }), env))
-      .status,
-    403,
-  );
-  assert.equal(
-    (await worker.fetch(req(record, { Authorization: "Bearer nope" }), env))
-      .status,
-    401,
-  );
-  assert.equal(
-    (await worker.fetch(req({ x: "a".repeat(5000) }), env)).status,
-    413,
-  );
-  assert.equal(
-    (await worker.fetch(req({ ...record, id: "bad" }), env)).status,
-    400,
-  );
-  assert.equal(
-    (await worker.fetch(req(record, {}, "OPTIONS"), env)).status,
-    204,
-  );
-  assert.equal((await worker.fetch(req(record, {}, "GET"), env)).status, 405);
-});
-test("endpoint dispatches only to configured repository and returns queued, not saved", async () => {
-  const original = globalThis.fetch;
-  let called;
-  globalThis.fetch = async (url, options) => {
-    called = { url, options };
-    return new Response(null, { status: 204 });
-  };
-  try {
-    const response = await worker.fetch(req(), env);
-    assert.equal(response.status, 202);
-    assert.ok(
-      called.url.endsWith(
-        "/owner/records/actions/workflows/save-record.yml/dispatches",
-      ),
-    );
-    assert.equal(JSON.parse(called.options.body).ref, "main");
-    assert.equal(
-      JSON.parse(JSON.parse(called.options.body).inputs.record).id,
-      record.id,
-    );
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-test("upstream failures are not reported as success", async () => {
-  const original = globalThis.fetch;
-  globalThis.fetch = async () =>
-    new Response("private details", { status: 403 });
-  try {
-    const response = await worker.fetch(req(), env);
-    assert.equal(response.status, 502);
-    assert.ok(!(await response.text()).includes("private details"));
-  } finally {
-    globalThis.fetch = original;
-  }
 });

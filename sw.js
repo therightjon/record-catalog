@@ -1,6 +1,6 @@
 const ROOT = new URL("./", self.location).href;
 const PREFIX = `side-a:${new URL(ROOT).pathname}:`;
-const CACHE = PREFIX + "v1";
+const CACHE = PREFIX + "v2";
 const SHELL = [
   "",
   "index.html",
@@ -8,6 +8,7 @@ const SHELL = [
   "app.js",
   "config.js",
   "lib/record.js",
+  "lib/session.js",
   "manifest.webmanifest",
   "assets/icon.svg",
   "assets/icon-192.png",

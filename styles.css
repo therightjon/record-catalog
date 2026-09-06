@@ -443,9 +443,6 @@ dd {
 dt {
   color: var(--muted);
 }
-#unlock .primary {
-  margin-top: 16px;
-}
 #settings-dialog p {
   font-size: 13px;
   line-height: 1.7;
@@ -559,5 +556,32 @@ dt {
   }
   .record strong {
     font-size: 17px;
+  }
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.account-row p {
+  flex: 1;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+#import-label {
+  display: block;
+  margin: 16px 0;
+}
+#import-drafts {
+  margin-top: 8px;
+}
+@media (max-width: 700px) {
+  .account-row p {
+    flex-basis: 100%;
+    margin: 4px 0 0;
   }
 }

@@ -1,8 +1,24 @@
 name = "side-a-save"
 main = "index.js"
 compatibility_date = "2026-09-01"
+workers_dev = true
+preview_urls = false
+
+[build]
+command = "npm run build --prefix .."
+
+[assets]
+directory = "../dist"
+binding = "ASSETS"
+run_worker_first = true
+
 [vars]
-ALLOWED_ORIGIN = "https://therightjon.github.io"
 GITHUB_REPOSITORY = "therightjon/record-catalog"
 GITHUB_REF = "main"
-# Set OWNER_KEY and GITHUB_TOKEN using wrangler secret put, never here.
+PUBLIC_CATALOG_URL = "https://therightjon.github.io/record-catalog/"
+# Fill these after creating the Cloudflare Access application. Empty values deny access.
+ADMIN_ORIGIN = ""
+ACCESS_TEAM_DOMAIN = ""
+ACCESS_AUD = ""
+ALLOWED_EMAILS = ""
+# Store GITHUB_TOKEN with wrangler secret put. OWNER_KEY is no longer used.

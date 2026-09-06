@@ -26,6 +26,12 @@
       ><button id="settings-button" class="quiet">Settings</button>
     </header>
     <main>
+      <div id="account-row" class="account-row" hidden>
+        <p id="account-status" role="status"></p>
+        <a id="public-catalog" class="quiet">View public shelf ↗</a
+        ><button id="sign-in-again" class="quiet" hidden>Sign in again</button
+        ><a href="/cdn-cgi/access/logout" class="quiet">Sign out</a>
+      </div>
       <section class="intro">
         <div>
           <p class="eyebrow">GOOD RECORDS. WELL KEPT.</p>
@@ -104,8 +110,10 @@
         ></span
       >
       <p>
-        On iPhone: Share → Add to Home Screen. Browse your shelf offline after
-        your first visit.
+        On iPhone: Share → Add to Home Screen.
+        <span id="offline-note"
+          >Browse your shelf offline after your first visit.</span
+        >
       </p>
     </footer>
     <dialog id="add-dialog">
@@ -156,25 +164,17 @@
         <h2>Your listening room</h2>
         <button class="close quiet" aria-label="Close settings">✕</button>
       </div>
-      <p>
-        Enter your owner key to send records to your catalog. It stays in memory
-        until you reload or lock this page.
-      </p>
-      <form id="unlock">
-        <label for="owner-key">Owner key</label
-        ><input
-          id="owner-key"
-          type="password"
-          autocomplete="off"
-          required
-        /><button class="primary">Unlock saving</button
-        ><button type="button" id="lock" class="quiet">Lock</button>
-      </form>
       <p id="settings-status" role="status"></p>
+      <button id="sign-in" class="primary">Sign in to add records</button>
       <p class="muted">
-        New here? Configure the save endpoint in config.js using the README. You
-        can browse and keep local drafts before setup.
+        Backups include your collection and local drafts. To move older drafts
+        to your signed-in page, export them here, then import the backup there.
+        Drafts stay on this device after sign-out.
       </p>
+      <label id="import-label" class="quiet" hidden
+        >Import drafts from a backup
+        <input id="import-drafts" type="file" accept="application/json,.json" />
+      </label>
       <button id="export" class="quiet">Export collection + drafts ↓</button>
     </dialog>
     <script type="module" src="app.js"></script>

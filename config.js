@@ -1,6 +1,7 @@
 export default {
   title: "Side A",
-  // Public endpoint URL only. Never put either secret in this file.
-  saveEndpoint: "",
+  // The Cloudflare Access-protected Worker home page, including its trailing slash.
+  adminUrl: "",
+  publicCatalogUrl: "https://therightjon.github.io/record-catalog/",
   musicBrainzContact: "https://github.com/therightjon/record-catalog",
 };

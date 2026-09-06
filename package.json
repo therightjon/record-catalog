@@ -9,6 +9,7 @@
     "start": "npm run build && python3 -m http.server 8080 --directory dist"
   },
   "dependencies": {
-    "@zxing/browser": "0.1.5"
+    "@zxing/browser": "0.1.5",
+    "jose": "6.1.3"
   }
 }
