@@ -2,6 +2,8 @@
 
 A mobile-first, single-page record shelf built with HTML, CSS and vanilla JavaScript. GitHub Pages serves the catalog; one Cloudflare Worker authenticates writes and triggers GitHub Actions. There is no database and no frontend framework.
 
+Repository: [therightjon/record-catalog](https://github.com/therightjon/record-catalog). GitHub Pages is configured at [therightjon.github.io/record-catalog](https://therightjon.github.io/record-catalog/). Saving still requires the Cloudflare setup below.
+
 ## What works
 
 - Search MusicBrainz by catalog number, typed barcode, or artist/title. Choose the matching vinyl pressing from paginated results.
@@ -91,7 +93,7 @@ The default is a personal owner key: a random 256-bit bearer credential, entered
 7. Commit and push the configuration change. After publication, open **Settings** in the catalog, enter the **owner key** (not the GitHub token), and unlock saving.
 8. Find a record and add it. It first appears under “Waiting to join the shelf.” Check GitHub Actions for **Save record** followed by **Publish catalog**. Refresh the catalog after publication: the queued card is replaced by a catalog card.
 
-No Cloudflare account or repository has been provisioned by this project. Service availability, quotas and account billing are controlled by those providers.
+The Cloudflare Worker has not been deployed; complete the steps above to enable remote saving. Service availability, quotas and account billing are controlled by those providers.
 
 ## How a save works
 
